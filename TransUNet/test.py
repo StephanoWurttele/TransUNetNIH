@@ -95,7 +95,7 @@ if __name__ == "__main__":
         'NIH': {
             'Dataset': Synapse_dataset,
             'volume_path': '../data/NIH Dataset/test_vol_h5',
-            'list_dir': './lists/lists_NIH',
+            'list_dir': './lists/list_NIH',
             'num_classes': 2,
             'z_spacing': 1,
         },

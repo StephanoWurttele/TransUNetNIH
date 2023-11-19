@@ -30,11 +30,6 @@ W = 512
 H = 512
 debug = False
 
-
-
-
-
-
 path_dicoms = 'raw_data'
 path_labels = './raw_labels'
 
@@ -58,8 +53,8 @@ for dirpath, dirnames, filenames in os.walk(path_dicoms):
     print('Dicom Label Path')
     print(all_label_path)
     print(all_label_path.shape)
-  for slice_filename in filenames:
-    # slice_number = int(slice_filename.split('-')[1].split('.')[0])
+  for slice_filename in sorted(filenames):
+    # print(slice_filename)
     slice_path = os.path.abspath(os.path.join(dirpath, slice_filename))
     dicom_info = dicom.dcmread(slice_path)
     if (dicom_info.pixel_array.shape[0] != W or dicom_info.pixel_array.shape[1] != H) :
@@ -75,20 +70,22 @@ for dirpath, dirnames, filenames in os.walk(path_dicoms):
       occurences = dict(zip(unique, counts))
       print(dicom_data.shape)
       breakpoint()
-    # makeIntoImage(label_data)
-    # makeIntoDicom(label_data)
-
+    # makeIntoImage(dicom_data)
+    # makeIntoDicom(dicom_data)
+    dicom_data = dicom_data + abs(np.amin(dicom_data)) # to positive values
+    dicom_data = dicom_data / 2400 # normalized
     if training_data:
       namefile = f"./train_npz/case{tomography_number}_slice{slice_number:03d}.npz"
       print('Saving at '+namefile)
-      np.savez(namefile, image=dicom_data.astype(np.float32) / 1024, label=label_data.astype(np.uint8))
+      np.savez(namefile, image=dicom_data.astype(np.float32), label=label_data.astype(np.uint8))
     else:
-      test_image.append(dicom_data.astype(np.float32) / 1024)
-      test_label.append(label_data.astype(np.float32))
+      test_image.append(dicom_data.astype(np.float32))
+      test_label.append(label_data.astype(np.uint8))
     processed_imgs += 1
+
   if not training_data:
     print(f"Saving at test_vol_h5/case{tomography_number}.npy.h5")
     with h5py.File(f"./test_vol_h5/case{tomography_number}.npy.h5", 'a') as hdf5_file:
       hdf5_file.create_dataset('image', data=np.array(test_image))
-      hdf5_file.create_dataset('label', data=np.array(test_label))
-   
+      hdf5_file.create_dataset('label', data=np.array(test_label), dtype='|u1')
+

@@ -1,0 +1,5 @@
+data/*
+!data/*.py
+model/*
+predictions/*
+TransUNet/test_log
