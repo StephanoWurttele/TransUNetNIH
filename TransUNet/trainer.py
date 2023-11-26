@@ -30,10 +30,14 @@ def trainer_synapse(args, model, snapshot_path):
                                transform=transforms.Compose(
                                    [RandomGenerator(output_size=[args.img_size, args.img_size])]))
     print("The length of train set is: {}".format(len(db_train)))
+    db_val = Synapse_dataset(base_dir=args.root_path, list_dir=args.list_dir, split="val",
+                               transform=transforms.Compose(
+                                   [RandomGenerator(output_size=[args.img_size, args.img_size])]))
+    print("The length of train set is: {}".format(len(db_val)))
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
-    # breakpoint()
+    breakpoint()
     trainloader = DataLoader(db_train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True,
                              worker_init_fn=worker_init_fn)
     if args.n_gpu > 1:
@@ -50,24 +54,38 @@ def trainer_synapse(args, model, snapshot_path):
     best_performance = 0.0
     iterator = tqdm(range(max_epoch), ncols=70)
     for epoch_num in iterator:
+        # print(len(trainloader))
+        train_amount = round(len(trainloader) * 0.9)
+        val_amount = len(trainloader) - train_amount
+        train_lr = 0
+        train_loss = 0
+        train_loss_ce = 0
+        val_loss = 0
+        val_loss_ce = 0
         for i_batch, sampled_batch in enumerate(trainloader):
             image_batch, label_batch = sampled_batch['image'], sampled_batch['label']
+            # breakpoint()
             image_batch, label_batch = image_batch.cuda(), label_batch.cuda()
             outputs = model(image_batch)
             loss_ce = ce_loss(outputs, label_batch[:].long())
             loss_dice = dice_loss(outputs, label_batch, softmax=True)
             loss = 0.5 * loss_ce + 0.5 * loss_dice
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            lr_ = base_lr * (1.0 - iter_num / max_iterations) ** 0.9
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr_
+            if(i_batch <= train_amount):
+              optimizer.zero_grad()
+              loss.backward()
+              optimizer.step()
+              lr_ = base_lr * (1.0 - iter_num / max_iterations) ** 0.9
+              train_lr += lr_
+              train_loss += loss
+              train_loss_ce += loss_ce
+              for param_group in optimizer.param_groups:
+                  param_group['lr'] = lr_
+            else:
+                print("In testing:")
+                val_loss += loss
+                val_loss_ce += loss_ce
 
             iter_num = iter_num + 1
-            writer.add_scalar('info/lr', lr_, iter_num)
-            writer.add_scalar('info/total_loss', loss, iter_num)
-            writer.add_scalar('info/loss_ce', loss_ce, iter_num)
 
             logging.info('iteration %d : loss : %f, loss_ce: %f' % (iter_num, loss.item(), loss_ce.item()))
 
@@ -80,6 +98,11 @@ def trainer_synapse(args, model, snapshot_path):
                 labs = label_batch[1, ...].unsqueeze(0) * 50
                 writer.add_image('train/GroundTruth', labs, iter_num)
 
+        writer.add_scalar('info/lr', train_lr/train_amount, epoch_num)
+        writer.add_scalar('info/total_loss', train_loss/train_amount, epoch_num)
+        writer.add_scalar('info/total_loss', val_loss/val_amount, epoch_num)
+        writer.add_scalar('info/loss_ce', train_loss_ce/train_amount, epoch_num)
+        writer.add_scalar('info/loss_ce', val_loss_ce/val_amount, epoch_num)
         save_interval = 50  # int(max_epoch/6)
         if epoch_num > int(max_epoch / 2) and (epoch_num + 1) % save_interval == 0:
             save_mode_path = os.path.join(snapshot_path, 'epoch_' + str(epoch_num) + '.pth')
